@@ -2,53 +2,82 @@ const fs = require('fs');
 const path = require('path');
 const _ = require('underscore');
 const counter = require('./counter');
+const Promise = require('bluebird');
+const fsReadPromise = Promise.promisify(fs.readFile);
 
 var items = {};
 
 // Public API - Fix these CRUD functions ///////////////////////////////////////
 
 exports.create = (text, callback) => {
-  var id = counter.getNextUniqueId();
-  items[id] = text;
-  callback(null, {id: id, text: text});
+  counter.getNextUniqueId((err, id) => {
+    let filepath = path.join(exports.dataDir, `${id}.txt`);
+    fs.writeFile(filepath, text, (err) => {
+      //check for errors
+      if (err) {
+        callback(err);
+      } else {
+        callback(null, {id: id, text: text});
+      }
+    });
+  });
+
+  
 };
 
 exports.readOne = (id, callback) => {
-  var item = items[id];
-  if (!item) {
-    callback(new Error(`No item with id: ${id}`));
-  } else {
-    callback(null, {id: id, text: item});
-  }
+  //generate filepath based on id (like in create)
+  let filepath = path.join(exports.dataDir, `${id}.txt`);
+  fs.readFile(filepath, (err, data) => {
+    if (err) {
+      callback(err);
+    } else {
+      callback(null, {id: id, text: data.toString()});
+    }
+  });
 };
 
 exports.readAll = (callback) => {
-  var data = [];
-  _.each(items, (item, idx) => {
-    data.push({ id: idx, text: items[idx] });
+  fs.readdir(exports.dataDir, (err, files) => {
+    let data = _.map(files, (file) => {
+      let filename = path.basename(file, '.txt');
+      let filepath = path.join(exports.dataDir, file);
+      return fsReadPromise(filepath).then((content) => {
+        return {id: filename, text: content.toString()}
+      });
+    });
+    Promise.all(data).then((results) => callback(null, results));
   });
-  callback(null, data);
 };
 
 exports.update = (id, text, callback) => {
-  var item = items[id];
-  if (!item) {
-    callback(new Error(`No item with id: ${id}`));
-  } else {
-    items[id] = text;
-    callback(null, {id: id, text: text});
-  }
+  let filepath = path.join(exports.dataDir, `${id}.txt`);
+  fs.readFile(filepath, (err, data) => {
+    if (err) {
+      callback(err);
+    } else {
+      fs.writeFile(filepath, text, (err) => {
+        //check for errors
+        if (err) {
+          callback(err);
+        } else {
+          callback(null, {id: id, text: text});
+        }
+      });
+    }
+  })
+  
 };
 
 exports.delete = (id, callback) => {
-  var item = items[id];
-  delete items[id];
-  if(!item) {
-    // report an error if item not found
-    callback(new Error(`No item with id: ${id}`))
-  } else {
-    callback();
-  }
+  let filepath = path.join(exports.dataDir, `${id}.txt`);
+  fs.unlink(filepath, (err) => {
+    if (err) {
+      callback(err);
+    } else {
+      callback();
+    }
+  });
 };
 
 // Config+Initialization code -- DO NOT MODIFY /////////////////////////////////
